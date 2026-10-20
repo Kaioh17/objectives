@@ -1,0 +1,18 @@
+# "standard" bundles uvicorn, the fastapi CLI, httpx, python-multipart, email-validator
+fastapi[standard]>=0.115
+pydantic-settings>=2.7
+sqlalchemy>=2.0
+# PostgreSQL / Supabase driver (unused with SQLite)
+psycopg[binary]>=3.2
+pyjwt>=2.8
+bcrypt>=4.1
+# Neon migrations
+alembic>=1.13
+# Encrypts Google tokens at rest
+cryptography>=43
+# IANA timezone data for zoneinfo (not shipped on Windows)
+tzdata>=2024.1
+
+# dev / test
+pytest>=8.0
+ruff>=0.6

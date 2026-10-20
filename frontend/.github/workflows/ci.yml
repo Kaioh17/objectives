@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      # The build needs no secrets. Production domains are not committed, so CI uses local stand-ins.
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+          NEXT_PUBLIC_SITE_URL: http://localhost:3123
+          NEXT_PUBLIC_APP_URL: http://app.localhost:3123
+      # Lighthouse + axe gate (skills/lighthouse-axe-gate) on the production build; add every route
+      - name: Audit
+        env:
+          SESSION_SECRET: ci-only-secret-not-used-anywhere-else
+        run: |
+          npm start -- -p 3123 &
+          npx --yes wait-on http://localhost:3123
+          npm run audit -- http://localhost:3123/ http://app.localhost:3123/login http://app.localhost:3123/signup http://app.localhost:3123/objectives
