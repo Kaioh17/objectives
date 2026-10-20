@@ -8,6 +8,8 @@
   Set daily, weekly and monthly objectives and schedule them on Google Calendar.
 </p>
 
+![Objectives main screen](screen-shot-of-main.png)
+
 ## Requirements
 
 - Python 3.11 or newer

@@ -100,6 +100,33 @@ body {
   object-fit: cover;
 }
 
+.banner-wrap {
+  position: relative;
+}
+
+/* Dark tint so the white greeting stays readable over the pale pattern */
+.banner-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 20, 40, 0.55), rgba(0, 20, 40, 0.2));
+  pointer-events: none;
+}
+
+.banner-greeting {
+  position: absolute;
+  z-index: 1;
+  inset: auto var(--page-gutter) 1.25rem;
+  margin: 0;
+  color: #fff;
+  font-family: var(--font-serif), serif;
+  font-size: clamp(1.75rem, 4vw, 3rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.35);
+  overflow-wrap: anywhere;
+}
+
 h1,
 h2,
 h3 {
