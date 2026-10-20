@@ -10,6 +10,18 @@
 
 ![Objectives main screen](screen-shot-of-main.png)
 
+## About
+
+Objectives is a personal project for writing down what you want to get done each day, week or month.
+
+I never know exactly how a day will go, so planning it hour by hour is hard for me.
+I do know what I want to accomplish, though.
+So I add each one as an objective, and whenever I get an opening during the day or week, I schedule it on Google Calendar in one click, without rewriting it.
+The objective stays active, so I can repeat this for as long as it matters.
+
+It is deliberately basic.
+It does what I set out to build, and I will add new features as I need them.
+
 ## Requirements
 
 - Python 3.11 or newer
