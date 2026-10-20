@@ -1,4 +1,4 @@
-from app.schemas.auth import LoginRequest
+from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.base import APIModel, ErrorResponse, Message, TimestampSchema
 from app.schemas.calendar import CalendarStatus, ScheduleItem
 from app.schemas.objective import (
@@ -21,6 +21,7 @@ __all__ = [
     "ScheduleItem",
     "ScheduleRequest",
     "TimestampSchema",
+    "TokenResponse",
     "UserCreate",
     "UserRead",
     "UserUpdate",

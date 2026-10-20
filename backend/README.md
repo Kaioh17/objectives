@@ -1,6 +1,6 @@
 # Objectives API
 
-FastAPI, Pydantic v2, SQLAlchemy 2.0 ORM, Neon PostgreSQL, cookie sessions, Google sign-in and Google Calendar.
+FastAPI, Pydantic v2, SQLAlchemy 2.0 ORM, Neon PostgreSQL, JWT auth, Google sign-in and Google Calendar.
 
 ## Contents
 
@@ -53,23 +53,30 @@ Table rules:
 
 ## Auth
 
-Login is a long-lived server-side session, not a token the browser has to manage.
+Login is two stateless JWTs signed with `SECRET_KEY`. Nothing about a login is stored in the database.
 
-- A random token goes in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` in production). Only its SHA-256 is stored in `sessions`.
-- It lasts `SESSION_DAYS` (90) and slides forward on any day the user returns, so active users stay signed in.
-- Sessions can be revoked: `POST /auth/logout`, `POST /auth/logout-all`, and changing the password signs out every other device.
+- The access token lives `ACCESS_TOKEN_MINUTES` (30). `login`, `register` and `refresh` return it in the JSON body.
+  The client keeps it in memory and sends `Authorization: Bearer <token>`.
+- The refresh token lives `REFRESH_TOKEN_DAYS` (30) in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` in production), scoped to `/api/v1/auth` so it only travels to auth routes.
+- `POST /auth/refresh` trades the cookie for a new access token and sets a new 30 day cookie.
+  Every refresh restarts the 30 days, so a user who keeps coming back is never signed out.
+- On page load, or after any 401, the client calls `/auth/refresh` once and retries. A 401 from `/auth/refresh` itself means the user must log in.
+- `users.token_version` is inside every token. Bumping it kills all of them at once, which is what `POST /auth/logout-all`, a password change and a Google takeover of an unverified account do.
+  `POST /auth/logout` only clears the cookie on this device, so an access token already issued works until it expires.
+- Changing the password keeps this device signed in by re-issuing its cookie, but its old access token is revoked, so the client must call `/auth/refresh` right after.
 - Google tokens are encrypted with Fernet (key derived from `SECRET_KEY`) before they reach the database.
 
 The frontend must send `credentials: "include"` on API requests.
 
 ## Routes
 
-All under `/api/v1`. Everything except `/auth/*` and `/health` needs the session cookie.
+All under `/api/v1`. Everything except `/auth/*` and `/health` needs a Bearer access token.
 
 | Route | Purpose |
 | --- | --- |
-| `POST /auth/register`, `/auth/login` | JSON body, sets the cookie, returns the user |
-| `POST /auth/logout`, `/auth/logout-all` | End this session, or all of them |
+| `POST /auth/register`, `/auth/login` | JSON body, sets the refresh cookie, returns `{access_token, expires_in, user}` |
+| `POST /auth/refresh` | Refresh cookie in, new access token and a new 30 day cookie out |
+| `POST /auth/logout`, `/auth/logout-all` | Clear this device's cookie, or revoke every device |
 | `GET /auth/google/start?next=/objectives` | Navigate the browser here. Signed out: Google login. Signed in: connects Calendar. |
 | `GET /users/me`, `PATCH /users/me`, `DELETE /users/me` | Profile, timezone, password, delete account |
 | `GET/POST /objectives`, `GET/PATCH/DELETE /objectives/{id}` | Objectives. List filters: `?archived=`, `?mode=` |
@@ -100,11 +107,11 @@ Tests use in-memory SQLite and a fake Google client, so they need no network or 
 
 ## Structure
 
-`router/` (HTTP) → `services/` (logic) → `models/` (SQLAlchemy). `schemas/` holds Pydantic contracts, `auth/` holds hashing, encryption and the session dependencies, `core/` holds config, database, logging, errors and time helpers, `migrations/` holds Alembic.
+`router/` (HTTP) → `services/` (logic) → `models/` (SQLAlchemy). `schemas/` holds Pydantic contracts, `auth/` holds hashing, encryption, JWTs and the auth dependencies, `core/` holds config, database, logging, errors and time helpers, `migrations/` holds Alembic.
 
 ## Production
 
 - Set `ENVIRONMENT=production` and a real `SECRET_KEY`.
 - Run `alembic upgrade head` on deploy.
-- Set `CORS` to the exact frontend origin, and keep API and frontend on the same site.
+- The browser calls the API directly: set `CORS` to the exact frontend origin and keep API and frontend on the same site (for example `app.example.com` and `api.example.com`), because the refresh cookie is `SameSite=Lax`.
 - Put the app in Google "In production" status, see [GOOGLE_SETUP.md](GOOGLE_SETUP.md).

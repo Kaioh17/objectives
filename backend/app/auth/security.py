@@ -1,11 +1,17 @@
 import base64
 import hashlib
 import secrets
+from datetime import timedelta
+from typing import Literal
 
 import bcrypt
+import jwt
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.config import settings
+from app.core.timezone import utcnow
+
+TokenKind = Literal["access", "refresh"]
 
 # Checked when the email is unknown so a missing account takes as long as a wrong password
 _DUMMY_HASH = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode()
@@ -25,9 +31,31 @@ def new_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def hash_token(token: str) -> str:
-    """Session tokens are random, so a fast hash is enough; a DB leak reveals no usable cookie."""
-    return hashlib.sha256(token.encode()).hexdigest()
+def token_lifetime(kind: TokenKind) -> timedelta:
+    if kind == "access":
+        return timedelta(minutes=settings.access_token_minutes)
+    return timedelta(days=settings.refresh_token_days)
+
+
+def create_token(user_id: int, version: int, kind: TokenKind) -> str:
+    """Signed JWT. `typ` stops a refresh token being used as an access token and vice versa."""
+    claims = {
+        "sub": str(user_id),
+        "ver": version,
+        "typ": kind,
+        "exp": utcnow() + token_lifetime(kind),
+    }
+    return jwt.encode(claims, settings.secret_key, algorithm="HS256")
+
+
+def decode_token(token: str, kind: TokenKind) -> dict | None:
+    try:
+        claims = jwt.decode(
+            token, settings.secret_key, algorithms=["HS256"], options={"require": ["exp", "sub"]}
+        )
+    except jwt.PyJWTError:
+        return None
+    return claims if claims.get("typ") == kind and "ver" in claims else None
 
 
 def _fernet() -> Fernet:

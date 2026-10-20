@@ -14,6 +14,9 @@ settings.secret_key = "test-secret-key-that-is-at-least-32-bytes"
 settings.google_client_id = "test-client-id"
 settings.google_client_secret = "test-client-secret"
 settings.environment = "development"
+# Pinned so a developer's own .env cannot change what the tests expect
+settings.frontend_url = "http://localhost:3000"
+settings.google_redirect_uri = "http://localhost:8000/api/v1/auth/google/callback"
 
 # In-memory DB shared across threads
 engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -45,8 +48,14 @@ def db():
 CREDS = {"email": "a@example.com", "password": "supersecret", "timezone": "Africa/Lagos"}
 
 
+def bearer(client, token):
+    client.headers["Authorization"] = f"Bearer {token}"
+
+
 @pytest.fixture
 def signed_in(client):
-    """A client holding a session cookie for CREDS."""
-    assert client.post("/api/v1/auth/register", json=CREDS).status_code == 201
+    """A client holding the refresh cookie and an access token for CREDS."""
+    res = client.post("/api/v1/auth/register", json=CREDS)
+    assert res.status_code == 201
+    bearer(client, res.json()["access_token"])
     return client

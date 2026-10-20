@@ -26,13 +26,16 @@ class Settings(BaseSettings):
     # Neon's direct connection, used only by Alembic migrations
     database_url_unpooled: str = ""
 
-    # Signs OAuth state and derives the key that encrypts Google tokens at rest
+    # Signs OAuth state and auth tokens, and derives the key that encrypts Google tokens at rest
     secret_key: str = "change-me"
-    # Sliding window: every active day pushes expiry out to this many days again
-    session_days: int = 90
-    session_cookie_name: str = "session"
+    # Short-lived JWT the client keeps in memory and sends as a Bearer header
+    access_token_minutes: int = 30
+    # Long-lived JWT in an HttpOnly cookie; every refresh issues a new one, so it slides
+    refresh_token_days: int = 30
+    refresh_cookie_name: str = "refresh_token"
 
-    # Where the Next.js app lives; Google sign-in redirects back here
+    # Where the Next.js app lives; Google sign-in redirects back here. The browser calls this API
+    # directly, so the app and the API must be same-site or the SameSite=Lax refresh cookie is lost
     frontend_url: str = "http://localhost:3000"
 
     # Google Cloud OAuth client, see GOOGLE_SETUP.md

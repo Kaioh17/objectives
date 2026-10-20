@@ -4,9 +4,10 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.models import GoogleAccount, User
 from app.services import google
-from tests.conftest import CREDS
+from tests.conftest import CREDS, bearer
 
 API = "/api/v1"
 SCOPE = "openid email profile " + google.CALENDAR_SCOPE
@@ -117,7 +118,11 @@ def test_google_login_creates_user_and_session(client, fake, db):
     assert res.status_code == 302
     assert res.headers["location"] == "http://localhost:3000/objectives"
 
+    # The callback only sets the refresh cookie; the frontend then asks for an access token
+    refreshed = client.post(f"{API}/auth/refresh").json()
+    bearer(client, refreshed["access_token"])
     me = client.get(f"{API}/users/me").json()
+    assert me == refreshed["user"]
     assert me["email"] == "g@example.com" and me["full_name"] == "G"
     account = db.scalar(select(GoogleAccount))
     assert account.refresh_token and "refresh-1" not in account.refresh_token  # encrypted
@@ -133,7 +138,7 @@ def test_callback_rejects_forged_state(client, fake):
     res = finish_flow(client, state)
     assert res.headers["location"].endswith("/login?error=google_state")
     assert finish_flow(client, "garbage").headers["location"].endswith("error=google_state")
-    assert client.get(f"{API}/users/me").status_code == 401
+    assert client.post(f"{API}/auth/refresh").status_code == 401
 
 
 def test_next_cannot_leave_the_site(client, fake):
@@ -153,7 +158,8 @@ def test_consent_denied(client, fake):
 
 def test_google_login_takes_over_unverified_password_account(client, fake, db):
     fake.profile["email"] = CREDS["email"]
-    client.post(f"{API}/auth/register", json=CREDS)  # squatter registers the address first
+    squatter = client.post(f"{API}/auth/register", json=CREDS).json()["access_token"]
+    squatter_refresh = client.cookies.get("refresh_token", path=f"{API}/auth")
     client.post(f"{API}/auth/logout")
 
     state, _ = start_flow(client)
@@ -162,6 +168,11 @@ def test_google_login_takes_over_unverified_password_account(client, fake, db):
     user = db.scalar(select(User).where(User.email == CREDS["email"]))
     assert user.hashed_password is None
     assert client.post(f"{API}/auth/login", json=CREDS).status_code == 401
+    # Everything the squatter was holding is dead
+    bearer(client, squatter)
+    assert client.get(f"{API}/users/me").status_code == 401
+    client.cookies.set("refresh_token", squatter_refresh, path=f"{API}/auth")
+    assert client.post(f"{API}/auth/refresh").status_code == 401
 
 
 def test_connect_from_password_account(signed_in, fake, db):
@@ -261,3 +272,10 @@ def test_disconnect(signed_in, fake):
     assert "revoke" in fake.calls
     assert signed_in.get(f"{API}/calendar/status").json()["connected"] is False
     assert signed_in.get(f"{API}/calendar/events", params={"date": "2026-11-02"}).status_code == 409
+
+
+def test_start_without_google_config_returns_to_the_form(client, monkeypatch):
+    monkeypatch.setattr(settings, "google_client_id", "")
+    res = client.get(f"{API}/auth/google/start", follow_redirects=False)
+    assert res.status_code == 302
+    assert res.headers["location"] == "http://localhost:3000/login?error=google_unavailable"

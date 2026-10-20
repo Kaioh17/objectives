@@ -69,16 +69,22 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/auth/google/callback
 FRONTEND_URL=http://localhost:3000
 ```
 
+The browser calls the API directly, so the callback lands on the API and sets the refresh cookie there.
+The cookie is `SameSite=Lax`, so the app (`localhost:3000`) and the API (`localhost:8000`) must be same-site.
+Google rejects `*.localhost` hosts such as `app.localhost`, so keep both on plain `localhost` in development.
+The frontend defaults in `frontend/.env.development` already do this.
+
 Restart the server, then try it:
 
-1. Start the API with `fastapi dev`.
-1. Open <http://localhost:8000/api/v1/auth/google/start> in the browser.
+1. Start the API with `fastapi dev` and the frontend with `npm run dev`.
+1. Open <http://localhost:3000/login> and click **Continue with Google**.
 1. Pick your account.
    Google shows "Google hasn't verified this app" while the app is unverified.
    Click **Advanced** and then **Go to Objectives (unsafe)**. This is expected for your own project.
 1. Leave the **calendar** checkbox ticked.
    Google lets users untick individual permissions, and the backend then reports `connected: false` from `GET /api/v1/calendar/status`.
-1. You land on `FRONTEND_URL/objectives` with a session cookie set.
+1. You land on `FRONTEND_URL/objectives` with the refresh cookie set.
+   The frontend then calls `POST /api/v1/auth/refresh` to get its first access token.
 
 ## 8. Before real users arrive
 
@@ -100,11 +106,11 @@ You can ship to a handful of test users in the meantime.
 
 ## 9. Production settings
 
-- API and frontend must be **same-site**, for example `app.example.com` and `api.example.com`.
-  The session cookie is `SameSite=Lax`, so it will not be sent between unrelated domains.
+- Serve the API from a host that is **same-site** with the app, for example `app.example.com` and `api.example.com`, with the redirect URI on the API host.
+  The refresh cookie is `SameSite=Lax`, so it will not be sent between unrelated domains.
 - Set `ENVIRONMENT=production` (marks the cookie `Secure`), a real `SECRET_KEY`, `FRONTEND_URL`, and `CORS` with the exact frontend origin.
 - Add the production redirect URI to the OAuth client (step 6).
-- The frontend must send `credentials: "include"` on every API request, or the cookie is dropped.
+- The frontend must send `credentials: "include"` on every API request, or the refresh cookie is dropped.
 
 ## Troubleshooting
 

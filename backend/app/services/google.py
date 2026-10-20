@@ -9,7 +9,7 @@ import httpx
 import jwt
 
 from app.core.config import settings
-from app.core.exceptions import AppError, BadGatewayError, ConflictError
+from app.core.exceptions import BadGatewayError, ConflictError
 from app.core.timezone import utcnow
 
 logger = logging.getLogger(__name__)
@@ -34,11 +34,6 @@ def _send(method: str, url: str, **kwargs: Any) -> httpx.Response:
     except httpx.HTTPError as exc:
         logger.warning("Google request failed: %s %s (%s)", method, url, exc)
         raise BadGatewayError("Could not reach Google") from exc
-
-
-def require_configured() -> None:
-    if not settings.google_enabled:
-        raise AppError("Google sign-in is not configured on this server")
 
 
 # --- OAuth ---------------------------------------------------------------------------------

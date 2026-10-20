@@ -8,7 +8,6 @@ from app.models.base import Base, TimestampMixin
 if TYPE_CHECKING:
     from app.models.google_account import GoogleAccount
     from app.models.objective import Objective
-    from app.models.session import UserSession
 
 
 class User(TimestampMixin, Base):
@@ -25,10 +24,9 @@ class User(TimestampMixin, Base):
     # IANA name; every timestamp is stored in UTC and converted to this zone in code
     timezone: Mapped[str] = mapped_column(String(64), default="UTC", server_default="UTC")
     is_active: Mapped[bool] = mapped_column(default=True, server_default=true())
+    # Embedded in every JWT; bumping it signs the user out everywhere
+    token_version: Mapped[int] = mapped_column(default=0, server_default="0")
 
-    sessions: Mapped[list["UserSession"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
-    )
     google_account: Mapped["GoogleAccount | None"] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )

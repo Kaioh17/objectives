@@ -39,7 +39,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        description="Objectives API: cookie sessions, Google sign-in and Google Calendar.",
+        description="Objectives API: JWT auth, Google sign-in and Google Calendar.",
         debug=settings.debug,
         lifespan=lifespan,
         openapi_tags=OPENAPI_TAGS,

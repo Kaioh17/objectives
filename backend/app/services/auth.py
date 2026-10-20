@@ -1,15 +1,53 @@
 from datetime import timedelta
 
+from fastapi import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth.security import encrypt_secret, verify_password
+from app.auth.security import create_token, encrypt_secret, token_lifetime, verify_password
+from app.core.config import settings
 from app.core.exceptions import ConflictError, UnauthorizedError
 from app.core.timezone import utcnow
 from app.models import GoogleAccount, User
+from app.schemas import TokenResponse, UserRead
 from app.services import google
-from app.services import session as session_service
 from app.services import user as user_service
+
+# Only auth routes (refresh, logout, the Google flow) ever need the refresh cookie
+REFRESH_COOKIE_PATH = f"{settings.api_prefix}/auth"
+
+
+def set_refresh_cookie(response: Response, user: User) -> None:
+    """Every call issues a fresh token with a full lifetime, which is what makes the login slide."""
+    response.set_cookie(
+        settings.refresh_cookie_name,
+        create_token(user.id, user.token_version, "refresh"),
+        max_age=int(token_lifetime("refresh").total_seconds()),
+        path=REFRESH_COOKIE_PATH,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+    )
+
+
+def clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        settings.refresh_cookie_name,
+        path=REFRESH_COOKIE_PATH,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+    )
+
+
+def issue(response: Response, user: User) -> TokenResponse:
+    """Start or extend a login: refresh cookie on the response, access JWT in the body."""
+    set_refresh_cookie(response, user)
+    return TokenResponse(
+        access_token=create_token(user.id, user.token_version, "access"),
+        expires_in=int(token_lifetime("access").total_seconds()),
+        user=UserRead.model_validate(user),
+    )
 
 
 def login(db: Session, email: str, password: str) -> User:
@@ -46,9 +84,9 @@ def google_sign_in(db: Session, code: str, current_user: User | None) -> User:
             user = user_service.create(db, info["email"], info.get("name"), "UTC", None)
         elif user.hashed_password:
             # The email was never verified at signup, so whoever set that password may not own
-            # the address. Google just proved ownership: drop the password and every session.
+            # the address. Google just proved ownership: drop the password and every token.
             user.hashed_password = None
-            session_service.revoke_all(db, user)
+            user_service.revoke_all_tokens(db, user)
     if not user.is_active:
         raise UnauthorizedError("Account disabled")
 

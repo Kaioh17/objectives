@@ -6,14 +6,13 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 
-from app.auth import CurrentSessionDep, OptionalUserDep, new_token
+from app.auth import CurrentUserDep, OptionalUserDep, RefreshUserDep, new_token
 from app.core.config import settings
 from app.core.database import DBDep
 from app.core.exceptions import AppError
-from app.schemas import ErrorResponse, LoginRequest, UserCreate, UserRead
+from app.schemas import ErrorResponse, LoginRequest, TokenResponse, UserCreate
 from app.services import auth as auth_service
 from app.services import google
-from app.services import session as session_service
 from app.services import user as user_service
 
 logger = logging.getLogger(__name__)
@@ -32,26 +31,29 @@ SAFE_NEXT = re.compile(r"^/(?![/\\])[\w\-./?=&%]*$")
     status_code=status.HTTP_201_CREATED,
     responses={409: {"model": ErrorResponse}},
 )
-def register(data: UserCreate, request: Request, response: Response, db: DBDep) -> UserRead:
-    user = user_service.register(db, data)
-    session_service.start(db, request, response, user)
-    return user
+def register(data: UserCreate, response: Response, db: DBDep) -> TokenResponse:
+    return auth_service.issue(response, user_service.register(db, data))
 
 
 @router.post("/login", responses={401: {"model": ErrorResponse}})
-def login(data: LoginRequest, request: Request, response: Response, db: DBDep) -> UserRead:
-    user = auth_service.login(db, data.email, data.password)
-    session_service.start(db, request, response, user)
-    return user
+def login(data: LoginRequest, response: Response, db: DBDep) -> TokenResponse:
+    return auth_service.issue(response, auth_service.login(db, data.email, data.password))
+
+
+@router.post(
+    "/refresh",
+    summary="Trade the refresh cookie for a new access token",
+    description="Also issues a new refresh cookie, so the login slides forward another 30 days.",
+    responses={401: {"model": ErrorResponse}},
+)
+def refresh(user: RefreshUserDep, response: Response) -> TokenResponse:
+    return auth_service.issue(response, user)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(request: Request, response: Response, db: DBDep) -> None:
-    """Idempotent: succeeds whether or not the cookie was still valid."""
-    token = request.cookies.get(settings.session_cookie_name)
-    if token and (session := session_service.get_valid(db, token)):
-        session_service.revoke(db, session)
-    session_service.clear_cookie(response)
+def logout(response: Response) -> None:
+    """Idempotent. Tokens are stateless, so an access token already issued lives out its 30 min."""
+    auth_service.clear_refresh_cookie(response)
 
 
 @router.post(
@@ -59,9 +61,9 @@ def logout(request: Request, response: Response, db: DBDep) -> None:
     status_code=status.HTTP_204_NO_CONTENT,
     responses={401: {"model": ErrorResponse}},
 )
-def logout_all(session: CurrentSessionDep, response: Response, db: DBDep) -> None:
-    session_service.revoke_all(db, session.user)
-    session_service.clear_cookie(response)
+def logout_all(user: CurrentUserDep, response: Response, db: DBDep) -> None:
+    user_service.revoke_all_tokens(db, user)
+    auth_service.clear_refresh_cookie(response)
 
 
 @router.get(
@@ -74,7 +76,12 @@ def google_start(
     user: OptionalUserDep,
     next: Annotated[str, Query(max_length=200)] = "/objectives",
 ) -> RedirectResponse:
-    google.require_configured()
+    if not settings.google_enabled:
+        # A browser navigation, so send the user back to the form instead of showing raw JSON
+        return RedirectResponse(
+            settings.frontend_url + "/login?error=google_unavailable",
+            status_code=status.HTTP_302_FOUND,
+        )
     nonce = new_token()
     state = google.make_state(nonce, next if SAFE_NEXT.match(next) else "/objectives")
     response = RedirectResponse(
@@ -106,7 +113,7 @@ def google_callback(
         response = RedirectResponse(settings.frontend_url + path, status_code=status.HTTP_302_FOUND)
         response.delete_cookie(NONCE_COOKIE, path=NONCE_PATH)
         if signed_in_as is not None:
-            session_service.start(db, request, response, signed_in_as)
+            auth_service.set_refresh_cookie(response, signed_in_as)
         return response
 
     payload = google.read_state(state) if state else None
@@ -122,5 +129,5 @@ def google_callback(
     except AppError as exc:
         logger.warning("Google sign-in failed: %s", exc.detail)
         return finish("/login?error=google")
-    # Linking from a signed-in session keeps that session; a login opens a new one
+    # Linking while signed in keeps the existing login; a Google login sets the refresh cookie
     return finish(payload["next"], None if user else signed_in)

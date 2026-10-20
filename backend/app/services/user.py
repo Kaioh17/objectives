@@ -5,7 +5,6 @@ from app.auth.security import hash_password, verify_password
 from app.core.exceptions import ConflictError, ForbiddenError
 from app.models import User
 from app.schemas import UserCreate, UserUpdate
-from app.services import session as session_service
 
 
 def get_by_email(db: Session, email: str) -> User | None:
@@ -33,7 +32,13 @@ def register(db: Session, data: UserCreate) -> User:
     return create(db, data.email, data.full_name, data.timezone, data.password)
 
 
-def update(db: Session, user: User, data: UserUpdate, keep_session_id: int) -> User:
+def revoke_all_tokens(db: Session, user: User) -> None:
+    """Every access and refresh token issued so far stops working."""
+    user.token_version += 1
+    db.commit()
+
+
+def update(db: Session, user: User, data: UserUpdate) -> User:
     changes = data.model_dump(exclude_unset=True)
     password = changes.pop("password", None)
     current_password = changes.pop("current_password", None)
@@ -43,13 +48,12 @@ def update(db: Session, user: User, data: UserUpdate, keep_session_id: int) -> U
         ):
             raise ForbiddenError("Current password is incorrect")
         user.hashed_password = hash_password(password)
+        # A new password logs out every device; the caller re-issues the cookie for this one
+        user.token_version += 1
     for field, value in changes.items():
         if value is not None:
             setattr(user, field, value)
     db.commit()
-    if password:
-        # A new password logs out every other device
-        session_service.revoke_all(db, user, keep_id=keep_session_id)
     db.refresh(user)
     return user
 

@@ -1,4 +1,4 @@
-from tests.conftest import CREDS
+from tests.conftest import CREDS, bearer
 
 API = "/api/v1"
 NEW = {"title": "Read", "description": "20 pages", "minutes": 30, "mode": "daily"}
@@ -41,7 +41,7 @@ def test_cannot_touch_another_users_objective(signed_in, client):
     obj = signed_in.post(f"{API}/objectives", json=NEW).json()
     signed_in.post(f"{API}/auth/logout")
     other = {"email": "b@example.com", "password": "supersecret"}
-    client.post(f"{API}/auth/register", json=other)
+    bearer(client, client.post(f"{API}/auth/register", json=other).json()["access_token"])
 
     url = f"{API}/objectives/{obj['id']}"
     assert client.get(url).status_code == 404
