@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { ModeGroups } from "./mode-groups";
 import { ObjectiveForm } from "./objective-form";
 import { PanelDialog } from "./panel-dialog";
-import { useObjectives } from "./store";
+import { objectives, useObjectives } from "./store";
 
 // Below this width the board is one column: the form and archive move into popups behind the dock
 const SMALL = "(max-width: 63.99rem)";
@@ -32,8 +32,35 @@ export function ObjectivesBoard() {
   const all = useObjectives();
   const small = useMediaQuery(SMALL);
   const [panel, setPanel] = useState<"new" | "archive" | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const active = all?.filter((o) => !o.archived);
   const archived = all?.filter((o) => o.archived);
+
+  const load = useCallback(() => {
+    objectives.load().catch(() => setLoadFailed(true));
+  }, []);
+  useEffect(load, [load]);
+
+  const loading = (
+    <p className="panel-empty" role="status">
+      Loading…
+    </p>
+  );
+  // Loading only means "no data yet"; once a load fails the retry takes its place
+  const retry = (
+    <div className="panel-empty" role="alert">
+      <p>Could not load your objectives.</p>
+      <button
+        type="button"
+        onClick={() => {
+          setLoadFailed(false);
+          load();
+        }}
+      >
+        Try Again
+      </button>
+    </div>
+  );
 
   const archiveCard = (
     <section className="archive-panel" aria-labelledby="archive-heading">
@@ -42,9 +69,11 @@ export function ObjectivesBoard() {
         <span className="mono meta">{archived?.length ?? ""}</span>
       </div>
       {!archived ? (
-        <p className="panel-empty" role="status">
-          Loading…
-        </p>
+        loadFailed ? (
+          <p className="panel-empty">Could not load.</p>
+        ) : (
+          loading
+        )
       ) : archived.length === 0 ? (
         <p className="panel-empty">Archived objectives appear here.</p>
       ) : (
@@ -59,9 +88,11 @@ export function ObjectivesBoard() {
 
       <div className="board-list">
         {!active ? (
-          <p className="panel-empty" role="status">
-            Loading…
-          </p>
+          loadFailed ? (
+            retry
+          ) : (
+            loading
+          )
         ) : active.length === 0 ? (
           <>
             <div className="panel-head">

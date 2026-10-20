@@ -30,7 +30,6 @@ export const clientSchema = z.object({
 
 // Server-only: runtime, secret. Never exposed to the browser.
 export const serverSchema = z.object({
-  API_INTERNAL_URL: z.url().transform(trimTrailingSlash).optional(),
   SESSION_SECRET: z.string().min(32).optional(),
 });
 

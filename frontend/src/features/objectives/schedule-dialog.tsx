@@ -1,11 +1,9 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import {
-  createCalendarEvent,
-  listCalendarEvents,
-  type ScheduleItem,
-} from "@/features/calendar/mock-calendar";
+import { googleStartUrl } from "@/features/auth/api";
+import { listCalendarEvents, type ScheduleItem } from "@/features/calendar/api";
+import { ApiError } from "@/lib/api-client";
 import { formatTime } from "./format";
 import { objectives } from "./store";
 import type { Objective } from "./types";
@@ -34,7 +32,12 @@ export function ScheduleDialog({
   const [pending, setPending] = useState(false);
   const [start] = useState(() => (objective.event ? new Date(objective.event.start) : nextHour()));
   const [date, setDate] = useState(() => toDateValue(start));
-  const [schedule, setSchedule] = useState<{ date: string; items: ScheduleItem[] } | null>(null);
+  // "connect": the user has not linked Google Calendar yet (the API answers 409)
+  const [schedule, setSchedule] = useState<{
+    date: string;
+    items: ScheduleItem[];
+    problem: "connect" | "failed" | null;
+  } | null>(null);
   const [minutes] = useState(() =>
     objective.event
       ? Math.round(
@@ -52,8 +55,11 @@ export function ScheduleDialog({
   useEffect(() => {
     let stale = false;
     listCalendarEvents(date)
-      .then((items) => !stale && setSchedule({ date, items }))
-      .catch(() => !stale && setSchedule({ date, items: [] }));
+      .then((items) => !stale && setSchedule({ date, items, problem: null }))
+      .catch((err) => {
+        const problem = err instanceof ApiError && err.status === 409 ? "connect" : "failed";
+        if (!stale) setSchedule({ date, items: [], problem });
+      });
     return () => {
       stale = true;
     };
@@ -73,16 +79,15 @@ export function ScheduleDialog({
     setError(null);
     setPending(true);
     try {
-      const created = await createCalendarEvent({
-        title: objective.title,
-        description: objective.description,
-        start: startAt,
-        minutes: duration,
-      });
-      objectives.update(objective.id, { event: created });
+      await objectives.schedule(objective.id, startAt, duration);
       ref.current?.close();
-    } catch {
-      setError("Could not reach Google Calendar. Try again.");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setSchedule((current) => current && { ...current, problem: "connect" });
+        setError(null);
+      } else {
+        setError("Could not reach Google Calendar. Try again.");
+      }
       setPending(false);
     }
   }
@@ -154,6 +159,13 @@ export function ScheduleDialog({
             <p className="meta" role="status">
               Loading…
             </p>
+          ) : schedule.problem === "connect" ? (
+            <p className="meta">
+              Connect Google Calendar to see your schedule and add this objective.{" "}
+              <a href={googleStartUrl()}>Connect Google Calendar</a>
+            </p>
+          ) : schedule.problem === "failed" ? (
+            <p className="meta">Could not load your schedule.</p>
           ) : schedule.items.length === 0 ? (
             <p className="meta">Nothing scheduled. You are free all day.</p>
           ) : (
@@ -168,7 +180,6 @@ export function ScheduleDialog({
           )}
         </section>
 
-        <p className="meta dialog-note">Preview only: nothing is sent to Google Calendar yet.</p>
         {error && (
           <p className="error dialog-note" role="alert">
             {error}
@@ -179,7 +190,7 @@ export function ScheduleDialog({
           <button type="button" className="btn-quiet" onClick={() => ref.current?.close()}>
             Cancel
           </button>
-          <button type="submit" disabled={pending}>
+          <button type="submit" disabled={pending || schedule?.problem === "connect"}>
             {pending ? "Adding…" : objective.event ? "Reschedule" : "Add to calendar"}
           </button>
         </div>

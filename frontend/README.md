@@ -68,7 +68,7 @@ NEXT_PUBLIC_APP_ENV=staging npm run build
 
 ### Domains
 
-The landing page (`/`) is served from `NEXT_PUBLIC_SITE_URL`; everything else (`/login`, `/signup`, `/objectives`) from `NEXT_PUBLIC_APP_URL`. `src/proxy.ts` redirects between them by host. Dev: `http://localhost:3000` and `http://app.localhost:3000`.
+The landing page (`/`) is served from `NEXT_PUBLIC_SITE_URL`; everything else (`/login`, `/signup`, `/objectives`) from `NEXT_PUBLIC_APP_URL`. `src/proxy.ts` redirects between them by host. In dev both are `http://localhost:3000`, so the proxy does nothing.
 
 Production domains (`NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_API_URL`) are never committed. Set them in `.env.production.local` (git-ignored) or the platform env / Docker build args; the build fails if they are missing.
 
@@ -130,11 +130,15 @@ Defaults follow [web-design-guidelines](../skills/web-design-guidelines/SKILL.md
 
 ## Backend (FastAPI)
 
-Built to pair with the FastAPI boilerplate:
+The app talks to the Objectives API in `../backend`.
 
-- Set `NEXT_PUBLIC_API_URL` to its API base (`http://localhost:8000/api/v1` locally).
-- Add the app origin (`NEXT_PUBLIC_APP_URL`) to the backend `CORS` variable, e.g. `CORS=http://app.localhost:3000`.
-- `src/lib/api-client.ts` wraps `fetch` and turns the backend's `{ "detail": "..." }` errors into `ApiError`.
+- **Direct calls.** The browser calls the API at `NEXT_PUBLIC_API_URL` (`http://localhost:8000/api/v1` in dev), so the backend `CORS` must list the app origin.
+  The backend's refresh cookie is `SameSite=Lax`, and `app.localhost` and `localhost` are different sites, so the app and API must be same-site: `localhost:3000` and `localhost:8000` in dev, `app.example.com` and `api.example.com` in production.
+- **Auth.** Login returns a 30 minute access JWT that lives in memory (`src/lib/api-client.ts`) and goes out as a Bearer header. The 30 day refresh token is an HttpOnly cookie the browser holds, never JavaScript.
+  `SessionProvider` (`src/features/auth/session.tsx`) calls `POST /auth/refresh` on every page load, which restores the login and slides the cookie another 30 days.
+  `apiFetch` also refreshes once and retries on any 401. If the cookie is rejected the app is signed out and sent to `/login`.
+- **Data.** Objectives and calendar calls go through `apiFetch` (`src/features/objectives/store.ts`, `src/features/calendar/api.ts`). Errors are `ApiError` with the backend's `detail` message.
+- **Google.** "Continue with Google" and "Connect Google Calendar" are plain navigations to `/auth/google/start`. Google rejects `*.localhost` redirect URIs, see `../backend/GOOGLE_SETUP.md` for the local setup.
 - Health: this app serves `/api/health`; the backend serves `/health`.
 
 ## Docker
@@ -152,7 +156,7 @@ Override build-time values with `--build-arg NEXT_PUBLIC_APP_ENV=staging --build
 - [ ] `SESSION_SECRET` (and any other secret) comes from the secret store
 - [ ] HTTPS in front; HSTS is on automatically in production
 - [ ] CSP added; `X-Frame-Options` reviewed if the app is embedded
-- [ ] Backend `CORS` lists this origin explicitly
+- [ ] `NEXT_PUBLIC_API_URL` is a same-site API host + `/api/v1`, and backend `CORS` lists the app origin
 - [ ] Error reporting wired into `src/app/error.tsx`
 - [ ] CI green (`format:check`, lint, typecheck, test, build, audit) and dependencies audited
 - [ ] `npm run audit` passes on every route (Lighthouse 80+ floor, 90+ gate, axe 0)

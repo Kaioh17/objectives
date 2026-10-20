@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type ComponentProps, type FormEvent } from "react";
+import { ApiError, refreshSession } from "@/lib/api-client";
+import { googleStartUrl, login, register } from "./api";
 
 const COPY = {
   login: {
@@ -22,6 +24,14 @@ const COPY = {
     switchHref: "/login",
   },
 } as const;
+
+// Error codes the backend puts in /login?error= when the Google round trip fails
+const GOOGLE_ERRORS: Record<string, string> = {
+  google_state: "Google sign-in expired or started in another browser. Try again.",
+  google_denied: "Google sign-in was cancelled.",
+  google: "Google sign-in failed. Try again, or use your email.",
+  google_unavailable: "Google sign-in is not set up yet. Use your email instead.",
+};
 
 function GoogleIcon() {
   return (
@@ -46,15 +56,39 @@ function GoogleIcon() {
   );
 }
 
-export function AuthForm({ mode }: { mode: keyof typeof COPY }) {
+function PasswordInput(props: Omit<ComponentProps<"input">, "type">) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="password-wrap">
+      <input {...props} type={shown ? "text" : "password"} />
+      <button
+        type="button"
+        className="password-toggle"
+        aria-label={shown ? "Hide password" : "Show password"}
+        aria-pressed={shown}
+        onClick={() => setShown((v) => !v)}
+      >
+        {shown ? "Hide" : "Show"}
+      </button>
+    </div>
+  );
+}
+
+export function AuthForm({ mode, error }: { mode: keyof typeof COPY; error?: string }) {
   const router = useRouter();
   const copy = COPY[mode];
   const [mismatch, setMismatch] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [failure, setFailure] = useState<string | null>((error && GOOGLE_ERRORS[error]) || null);
 
-  // ponytail: frontend only - any valid input "signs in". Replace with the auth API call and Google OAuth redirect.
-  const enter = () => router.push("/objectives");
+  // Someone with a live refresh cookie never needs this form: send them straight in
+  useEffect(() => {
+    refreshSession()
+      .then(() => router.replace("/objectives"))
+      .catch(() => {});
+  }, [router]);
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     if (mode === "signup" && form.get("password") !== form.get("confirm")) {
@@ -62,7 +96,19 @@ export function AuthForm({ mode }: { mode: keyof typeof COPY }) {
       document.getElementById("confirm")?.focus();
       return;
     }
-    enter();
+
+    const email = String(form.get("email"));
+    const password = String(form.get("password"));
+    setPending(true);
+    setFailure(null);
+    try {
+      if (mode === "signup") await register(String(form.get("name")), email, password);
+      else await login(email, password);
+      router.replace("/objectives");
+    } catch (err) {
+      setFailure(err instanceof ApiError ? err.message : "Could not reach the server. Try again.");
+      setPending(false);
+    }
   }
 
   return (
@@ -74,12 +120,12 @@ export function AuthForm({ mode }: { mode: keyof typeof COPY }) {
         <p className="meta">{copy.lede}</p>
       </div>
 
-      <button type="button" className="btn-quiet btn-bar auth-google" onClick={enter}>
+      <a className="btn-quiet btn-bar auth-google" href={googleStartUrl()}>
         <span className="auth-google-label">
           <GoogleIcon />
           Continue with Google
         </span>
-      </button>
+      </a>
 
       <p className="auth-divider">or use your email</p>
 
@@ -112,11 +158,10 @@ export function AuthForm({ mode }: { mode: keyof typeof COPY }) {
         </div>
         <div className="field">
           <label htmlFor="password">Password</label>
-          <input
+          <PasswordInput
             id="password"
             name="password"
             className="input"
-            type="password"
             autoComplete={mode === "signup" ? "new-password" : "current-password"}
             minLength={mode === "signup" ? 8 : undefined}
             placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
@@ -126,11 +171,10 @@ export function AuthForm({ mode }: { mode: keyof typeof COPY }) {
         {mode === "signup" && (
           <div className="field">
             <label htmlFor="confirm">Confirm Password</label>
-            <input
+            <PasswordInput
               id="confirm"
               name="confirm"
               className="input"
-              type="password"
               autoComplete="new-password"
               placeholder="Repeat your password"
               aria-invalid={mismatch}
@@ -145,8 +189,13 @@ export function AuthForm({ mode }: { mode: keyof typeof COPY }) {
             )}
           </div>
         )}
-        <button type="submit" className="btn-bar">
-          {copy.submit}
+        {failure && (
+          <p className="error auth-error" role="alert">
+            {failure}
+          </p>
+        )}
+        <button type="submit" className="btn-bar" disabled={pending}>
+          {pending ? "Please wait…" : copy.submit}
           <span aria-hidden="true">&rarr;</span>
         </button>
       </form>
@@ -154,7 +203,6 @@ export function AuthForm({ mode }: { mode: keyof typeof COPY }) {
       <p className="auth-switch">
         {copy.switchText} <Link href={copy.switchHref}>{copy.switchLabel}</Link>
       </p>
-      <p className="auth-note meta">Preview only - nothing is stored yet.</p>
     </section>
   );
 }

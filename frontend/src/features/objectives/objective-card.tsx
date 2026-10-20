@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
+import { ApiError } from "@/lib/api-client";
 import { formatMinutes, formatWhen } from "./format";
 import { ObjectiveForm } from "./objective-form";
 import { PanelDialog } from "./panel-dialog";
@@ -12,7 +13,22 @@ export function ObjectiveCard({ objective, index }: { objective: Objective; inde
   const [scheduling, setScheduling] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { id, title, description, minutes, mode, archived, event } = objective;
+
+  // Archive, restore and delete go to the server first; a failure is shown on the card
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not reach the server. Try again.");
+      setConfirming(false);
+      setBusy(false);
+    }
+  }
 
   return (
     <li className="objective reveal" style={{ "--index": Math.min(index, 8) } as CSSProperties}>
@@ -22,6 +38,11 @@ export function ObjectiveCard({ objective, index }: { objective: Objective; inde
         {event && (
           <p className="objective-when mono">
             Scheduled <time dateTime={event.start}>{formatWhen(event.start)}</time>
+          </p>
+        )}
+        {error && (
+          <p className="error" role="alert">
+            {error}
           </p>
         )}
       </div>
@@ -42,7 +63,8 @@ export function ObjectiveCard({ objective, index }: { objective: Objective; inde
               type="button"
               className="foot-cell foot-danger"
               aria-label={`Confirm delete ${title}`}
-              onClick={() => objectives.remove(id)}
+              disabled={busy}
+              onClick={() => run(() => objectives.remove(id))}
             >
               Delete
             </button>
@@ -59,7 +81,8 @@ export function ObjectiveCard({ objective, index }: { objective: Objective; inde
                   type="button"
                   className="foot-cell foot-end"
                   aria-label={`Restore ${title}`}
-                  onClick={() => objectives.update(id, { archived: false })}
+                  disabled={busy}
+                  onClick={() => run(() => objectives.update(id, { archived: false }))}
                 >
                   Restore
                 </button>
@@ -96,7 +119,8 @@ export function ObjectiveCard({ objective, index }: { objective: Objective; inde
                   type="button"
                   className="foot-cell"
                   aria-label={`Archive ${title}`}
-                  onClick={() => objectives.update(id, { archived: true })}
+                  disabled={busy}
+                  onClick={() => run(() => objectives.update(id, { archived: true }))}
                 >
                   Archive
                 </button>

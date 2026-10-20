@@ -56,7 +56,8 @@ cp .env.example .env.local
 npm run dev
 ```
 
-The app runs at <http://localhost:3000>.
+The app runs at <http://localhost:3000> and calls the API at <http://localhost:8000> directly, so start both.
+Keep both on `localhost`: the refresh cookie is `SameSite=Lax`, so they must be same-site.
 
 ### 4. Google sign-in and Calendar (optional)
 

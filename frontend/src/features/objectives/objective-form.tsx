@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState, type FormEvent } from "react";
+import { ApiError } from "@/lib/api-client";
 import { objectives } from "./store";
 import { MODES, MODE_LABEL, objectiveInputSchema, type Objective } from "./types";
 
@@ -27,6 +28,8 @@ export function ObjectiveForm({
   const uid = useId();
   const [errors, setErrors] = useState<Errors>({});
   const [saved, setSaved] = useState("");
+  const [pending, setPending] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
   // A typed custom time wins over the preset; picking a preset clears it
   const [preset, setPreset] = useState(
     objective && isPreset(objective.minutes) ? objective.minutes : DEFAULT_MINUTES,
@@ -35,7 +38,7 @@ export function ObjectiveForm({
     objective && !isPreset(objective.minutes) ? String(objective.minutes) : "",
   );
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
@@ -63,13 +66,24 @@ export function ObjectiveForm({
       return;
     }
 
+    setPending(true);
+    setFailure(null);
+    setSaved("");
+    try {
+      if (objective) await objectives.update(objective.id, result.data);
+      else await objectives.add(result.data);
+    } catch (err) {
+      setFailure(err instanceof ApiError ? err.message : "Could not reach the server. Try again.");
+      setPending(false);
+      return;
+    }
+    setPending(false);
+
     if (objective) {
-      objectives.update(objective.id, result.data);
       onSaved?.();
       return;
     }
 
-    objectives.add(result.data);
     setErrors({});
     setSaved(`Saved “${result.data.title}”.`);
     form.reset();
@@ -192,8 +206,13 @@ export function ObjectiveForm({
         <p className="meta form-status" role="status" aria-live="polite">
           {saved}
         </p>
-        <button type="submit" className="btn-bar">
-          {objective ? "Save changes" : "Save objective"}
+        {failure && (
+          <p className="error form-status" role="alert">
+            {failure}
+          </p>
+        )}
+        <button type="submit" className="btn-bar" disabled={pending}>
+          {pending ? "Saving…" : objective ? "Save changes" : "Save objective"}
           <span className="key-hint" aria-hidden="true">
             ↵
           </span>

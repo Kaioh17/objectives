@@ -301,6 +301,18 @@ kbd {
   background: var(--surface);
 }
 
+/* The sign-out control is a button: strip the filled button look so it reads as a bar cell */
+button.topbar-link {
+  min-height: 0;
+  color: inherit;
+  background: transparent;
+}
+
+button.topbar-link:hover {
+  color: var(--heading);
+  background: var(--surface);
+}
+
 .topbar-cta {
   color: var(--accent-fg);
   background: var(--accent);
@@ -431,8 +443,9 @@ kbd {
   margin: 0;
 }
 
-.auth-google {
+.btn-bar.auth-google {
   justify-content: center;
+  text-decoration: none;
   border-bottom: 1px solid var(--border);
 }
 
@@ -454,8 +467,12 @@ kbd {
   letter-spacing: 0.1em;
 }
 
-.auth-switch,
-.auth-note {
+.auth-error {
+  padding: 0.75rem var(--gutter);
+  border-top: 1px solid var(--border);
+}
+
+.auth-switch {
   margin: 0;
   padding: 0.75rem var(--gutter);
 }
@@ -463,10 +480,6 @@ kbd {
 .auth-switch {
   border-top: 1px solid var(--border);
   font-size: 0.9375rem;
-}
-
-.auth-note {
-  border-top: 1px solid var(--border);
 }
 
 /* Page intro */
@@ -543,6 +556,29 @@ kbd {
 /* The cell shows focus (see .field:focus-within), so the bare input does not need a second ring */
 .input:focus-visible {
   outline: none;
+}
+
+.password-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.password-toggle {
+  flex: none;
+  padding: 0.25rem 0;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+
+.password-toggle:hover {
+  color: var(--heading);
 }
 
 textarea.input {

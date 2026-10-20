@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { calendarEventSchema } from "@/features/calendar/mock-calendar";
 
 export const MODES = ["daily", "weekly", "monthly"] as const;
 export type Mode = (typeof MODES)[number];
@@ -9,6 +8,9 @@ export const MODE_LABEL: Record<Mode, string> = {
   weekly: "Weekly",
   monthly: "Monthly",
 };
+
+// The Google Calendar event an objective was scheduled as
+const calendarEventSchema = z.object({ id: z.string(), start: z.string(), end: z.string() });
 
 export const objectiveSchema = z.object({
   id: z.string(),
@@ -38,3 +40,31 @@ export const objectiveInputSchema = objectiveSchema.pick({
   mode: true,
 });
 export type ObjectiveInput = z.infer<typeof objectiveInputSchema>;
+
+// The API speaks snake_case, integer ids and a flat event_* triple; the UI wants the Objective above
+export const apiObjectiveSchema = z
+  .object({
+    id: z.number(),
+    title: z.string(),
+    description: z.string(),
+    minutes: z.number(),
+    mode: z.enum(MODES),
+    archived: z.boolean(),
+    created_at: z.string(),
+    event_id: z.string().nullable(),
+    event_start: z.string().nullable(),
+    event_end: z.string().nullable(),
+  })
+  .transform((o): Objective => ({
+    id: String(o.id),
+    title: o.title,
+    description: o.description,
+    minutes: o.minutes,
+    mode: o.mode,
+    archived: o.archived,
+    createdAt: o.created_at,
+    event:
+      o.event_id && o.event_start && o.event_end
+        ? { id: o.event_id, start: o.event_start, end: o.event_end }
+        : null,
+  }));

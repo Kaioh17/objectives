@@ -1,17 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { formatMinutes } from "./format";
-import { parseObjectives } from "./store";
-import { objectiveInputSchema } from "./types";
+import { apiObjectiveSchema, objectiveInputSchema } from "./types";
 
-const stored = {
-  id: "a1",
+const fromApi = {
+  id: 7,
   title: "Read",
   description: "",
   minutes: 30,
   mode: "daily",
   archived: false,
-  createdAt: "2026-10-20T08:00:00.000Z",
-  event: null,
+  created_at: "2026-10-20T08:00:00Z",
+  event_id: null,
+  event_start: null,
+  event_end: null,
 };
 
 describe("formatMinutes", () => {
@@ -22,12 +23,36 @@ describe("formatMinutes", () => {
   });
 });
 
-describe("parseObjectives", () => {
-  it("reads valid data and survives junk", () => {
-    expect(parseObjectives(JSON.stringify([stored]))).toHaveLength(1);
-    expect(parseObjectives(null)).toEqual([]);
-    expect(parseObjectives("{not json")).toEqual([]);
-    expect(parseObjectives(JSON.stringify([{ ...stored, mode: "yearly" }]))).toEqual([]);
+describe("apiObjectiveSchema", () => {
+  it("maps the API shape to the UI shape", () => {
+    expect(apiObjectiveSchema.parse(fromApi)).toEqual({
+      id: "7",
+      title: "Read",
+      description: "",
+      minutes: 30,
+      mode: "daily",
+      archived: false,
+      createdAt: "2026-10-20T08:00:00Z",
+      event: null,
+    });
+  });
+
+  it("folds the event_* triple into one event", () => {
+    const scheduled = {
+      ...fromApi,
+      event_id: "ev1",
+      event_start: "2026-11-02T09:00:00Z",
+      event_end: "2026-11-02T09:30:00Z",
+    };
+    expect(apiObjectiveSchema.parse(scheduled).event).toEqual({
+      id: "ev1",
+      start: "2026-11-02T09:00:00Z",
+      end: "2026-11-02T09:30:00Z",
+    });
+  });
+
+  it("rejects a response it does not understand", () => {
+    expect(apiObjectiveSchema.safeParse({ ...fromApi, mode: "yearly" }).success).toBe(false);
   });
 });
 
